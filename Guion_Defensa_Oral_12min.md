@@ -101,32 +101,31 @@
 ### Machine Learning con Spark MLlib (Consigna 6), Benchmarking, Conclusiones y Cierre
 
 #### 📽️ SLIDE 6: Planteo del Problema de ML (Justificación y Pipeline) [08:00 - 09:15]
-> *(En pantalla: Slide 6 con la arquitectura en dos columnas del pipeline de ML)*
+> *(En pantalla: Slide 6 con la arquitectura en dos columnas del pipeline de ML y la formulación binaria)*
 
 * **Texto del Expositor:**
-  > "Muchas gracias, Diego. Buenas tardes. En la Consigna 6 abordamos el modelado predictivo a escala masiva mediante **Spark MLlib**.
+  > "Muchas gracias, Diego. Buenas tardes. En la Consigna 6 abordamos el modelado predictivo a escala masiva mediante **Spark MLlib**, seleccionando la **Opción A (Clasificación Supervisada)**.
   >
-  > 1. **Justificación del Problema:** Definimos como variable objetivo a predecir la **Severidad vial (Niveles 1 a 4)**. En Sistemas Inteligentes de Transporte (ITS), conocer la severidad probable en los primeros segundos de un siniestro permite despachar unidades de soporte vital y alterar la señalización antes de que se propague el colapso de la red.
+  > 1. **Justificación del Problema y Mitigación del Sesgo:** En el dataset original de 7.7 millones de registros, la Severidad 2 concentra un abrumador 79.67% de los casos. Entrenar un modelo multiclase ingenuo induce la infame *Paradoja de la Exactitud*, donde un clasificador nulo que prediga siempre clase 2 obtiene 79.8% de accuracy sin discriminar absolutamente nada. Por ello, siguiendo las directivas del enunciado, **reformulamos el problema a Clasificación Binaria de Siniestros Críticos**: predecir si un accidente alcanzará **Alta Severidad (`Severity >= 3`, Niveles 3 y 4)** frente a severidad regular. En Sistemas Inteligentes de Transporte (ITS), esta distinción es vital para despachar ambulancias, helicópteros y grúas de gran porte en los primeros segundos del choque.
   >
-  > 2. **Prevención de Data Leakage:** Un error común en este dataset es incluir variables post-evento como la duración del despeje o la distancia de congestión. Nuestro pipeline las excluyó estrictamente, garantizando que el modelo opere **únicamente con 54 factores exógenos y ambientales preexistentes al choque**.
+  > 2. **Prevención de Data Leakage:** Excluimos rigurosamente variables post-evento como la duración del despeje vial o la longitud de la congestión formada. El vector opera **únicamente con variables ambientales, temporales y de infraestructura preexistentes al siniestro**.
   >
-  > 3. **Pipeline Distribuido pyspark.ml:** Diseñamos un flujo que imputa nulos, indexa las variables categóricas con `StringIndexer`, codifica estados geográficos con `OneHotEncoderEstimator`, extrae componentes temporales cíclicas y empaqueta las 13 variables de infraestructura en un vector de características mediante `VectorAssembler`.
-  >
-  > Elegimos un clasificador supervisado `DecisionTreeClassifier` configurando el hiperparámetro `maxBins=60` para capturar con precisión la cardinalidad de los 49 estados."
+  > 3. **Pipeline Distribuido y Ponderación de Clases:** Diseñamos un flujo en `pyspark.ml` que imputa nulos, indexa variables categóricas con `StringIndexer`, codifica estados y ciclos solares con `OneHotEncoder`, y ensambla las características con `VectorAssembler`. Para neutralizar el desbalance (80.5% leves vs 19.5% graves), calculamos pesos de clase inversos (`weightCol`) e implementamos un ensamble **`RandomForestClassifier` distribuido** (20 árboles, profundidad 6, `maxBins=64`)."
 
 ---
 
 #### 📽️ SLIDE 7: Resultados Experimentales y Evaluación del Modelo [09:15 - 10:15]
-> *(En pantalla: Slide 7 con el gráfico de métricas y feature importances)*
+> *(En pantalla: Slide 7 con matriz de confusión, curva ROC-AUC y feature importances)*
 
 * **Texto del Expositor:**
-  > "En la diapositiva 7 observamos la evaluación sobre una partición rigurosa del **80% para entrenamiento y 20% para test**, procesando millones de registros en 245 segundos.
+  > "En la diapositiva 7 presentamos la evaluación sobre una partición independiente del **80% de entrenamiento y 20% de testeo**, procesando más de 7 millones de registros limpios en 270 segundos sobre Spark.
   >
-  > Los resultados alcanzados superan ampliamente el baseline mayoritario del 73.2%:
-  > * **Accuracy global del 79.81%**
-  > * **F1-Score Ponderado de 0.7138**, lo cual confirma la robustez del modelo frente al severo desbalanceo de clases intrínseco de los accidentes viales.
+  > Las métricas cuantitativas confirman una capacidad discriminativa genuina:
+  > * **ROC-AUC de 0.7012 (Área bajo la curva ROC)**, superando holgadamente el umbral del azar (0.50) y acreditando la métrica obligatoria del enunciado.
+  > * **Sensibilidad o Recall sobre Siniestros Graves del 75.5% (198,306 siniestros críticos detectados sobre el test set)**. Es decir, el modelo identifica exitosamente a 3 de cada 4 accidentes graves.
+  > * **F1-Score Ponderado de 0.6071** y **PR-AUC de 0.3503**.
   >
-  > Al inspeccionar los nodos raíz del árbol de decisión, confirmamos nuestra hipótesis de investigación: las variables con mayor ganancia de información son la **Visibilidad inferior a 3 millas** y la presencia de **Intercambiadores viales (`Junction == True`)**. Cuando ambas condiciones convergen, la probabilidad de que un siniestro sea clasificado en Severidad 3 o 4 se cuadruplica."
+  > La inspección de las importancias relativas en el bosque confirma nuestra hipótesis: la presencia de **Intercambiadores viales (`Junction == True`)**, la **Visibilidad reducida (< 3 millas)** y las autopistas interestatales (`Start_Lat` / `Start_Lng` en corredores I-95, I-10, I-80) son los determinantes principales del riesgo de alta severidad vial."
 
 ---
 
@@ -152,7 +151,7 @@
   > 1. La reingeniería a **Parquet con compresión ZSTD y ordenamiento geodésico** ahorró un 83% de almacenamiento y eliminó hasta un 70% de lecturas redundantes en disco.
   > 2. **Pandas y Spark son complementarios**, no excluyentes: Pandas para analítica ágil mononodo; Spark para agregaciones masivas y pipelines tolerantes a fallos.
   > 3. La **doble perspectiva metodológica** es obligatoria en Big Data para no confundir densidad demográfica con riesgo real.
-  > 4. Las casi **13 horas de bloqueo en fines de semana** y la precisión del **79.8% de nuestro modelo ML** aportan herramientas concretas para el diseño de políticas públicas viales e ITS.
+  > 4. Las casi **13 horas de bloqueo en fines de semana** y la **capacidad predictiva del 75.5% de Recall en siniestros graves** aportan herramientas concretas para el diseño de políticas públicas viales e ITS.
   >
   > *(Pase a Slide 10)*
   > Agradecemos al cuerpo docente de la Universidad de Palermo. Dejamos abiertos los 3 minutos restantes para sus preguntas y comentarios."
@@ -180,3 +179,8 @@
 * **Quién responde:** **Diego**.
 * **Respuesta técnica contundente:**
   > *"El análisis fotométrico cruzado demostró que no se trata únicamente de un factor de visibilidad, ya que en el crepúsculo astronómico el despeje se mantiene en 345 minutos. La causa principal de que en la noche de fin de semana trepe a 772.75 minutos (~12.88 horas) reside en la disponibilidad de recursos operativos: los departamentos de transporte estatales (DOT) y los servicios de grúas pesadas operan con guardias mínimas durante las madrugadas no laborables. Además, los siniestros nocturnos de fin de semana presentan mayor tasa de colisiones a alta velocidad y consumos de sustancias, lo que exige peritajes policiales y judiciales en el lugar del hecho antes de poder liberar la calzada."*
+
+### Pregunta 5: "¿Por qué reformularon a clasificación binaria de siniestros graves y cómo abordaron el sesgo del dataset?"
+* **Quién responde:** **Melisa** o **Diego**.
+* **Respuesta técnica contundente:**
+  > *"En el dataset US Accidents, la Severidad 2 representa el 79.67% de todas las observaciones. Si hubiésemos mantenido una clasificación multiclase ingenua de 4 clases, cualquier algoritmo (como un árbol simple o regresión logística) cae en la Paradoja de la Exactitud: predice ciegamente la clase 2 para todo y arroja un 79.8% de Accuracy espurio, con un Recall cercano a cero en las clases críticas. Siguiendo la pauta explícita del enunciado de la Consigna 6, binarizamos la variable objetivo en 'Siniestros de Alta Severidad' (`Severity >= 3`), que representan el 19.46% del universo. Además, introdujimos ponderación de pesos inversos (`weightCol`) en el entrenamiento del `RandomForestClassifier` distribuido para penalizar severamente los falsos negativos. Gracias a esta arquitectura, logramos un ROC-AUC de 0.7012 y un Recall del 75.5% sobre siniestros graves, garantizando que el modelo opere como una herramienta de alerta temprana real para servicios de emergencia médica e ITS."*
